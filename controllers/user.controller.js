@@ -1,4 +1,3 @@
-// controllers/auth.controller.js
 const asyncHandler = require("express-async-handler");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
@@ -14,6 +13,8 @@ const generateToken = require("../utils/generateToken.js");
 const { getDeviceInfo, getLocation } = require("../utils/loginInfo.js");
 const emailQueue = require("../services/queues/email.queue.js");
 const { system } = require("../config/config.inc.js");
+
+const { checkEmailRateLimit } = require("../utils/emailRateLimit.js");
 
 const sha256 = (value) =>
   crypto.createHash("sha256").update(value).digest("hex");
@@ -85,10 +86,19 @@ const loginUser = asyncHandler(async function (req, res) {
       throw new Error("Failed to create verification token. Please try again.");
     }
 
-    await emailQueue.add("sendEmail", {
-      type: "VERIFY_EMAIL",
-      payload: { to: user.email, name: user.fname, token: rawToken },
-    });
+    const rl = await checkEmailRateLimit(
+      `${user.email}:VERIFY_EMAIL`,
+      ipAddress,
+      5,
+      60,
+    );
+
+    if (rl.allowed) {
+      await emailQueue.add("sendEmail", {
+        type: "VERIFY_EMAIL",
+        payload: { to: user.email, name: user.fname, token: rawToken },
+      });
+    }
 
     res.status(403);
     throw new Error(
@@ -165,17 +175,26 @@ const loginUser = asyncHandler(async function (req, res) {
 
   const location = await getLocation(ipAddress);
 
-  await emailQueue.add("sendEmail", {
-    type: "NOTIFY_USER",
-    payload: {
-      email: user.email,
-      userName: user.fname,
-      loginTime: nowUtc,
-      ipAddress,
-      deviceInfo: deviceLabel,
-      location,
-    },
-  });
+  const notifyRl = await checkEmailRateLimit(
+    `${user.email}:NOTIFY_USER`,
+    ipAddress,
+    5,
+    60,
+  );
+
+  if (notifyRl.allowed) {
+    await emailQueue.add("sendEmail", {
+      type: "NOTIFY_USER",
+      payload: {
+        email: user.email,
+        userName: user.fname,
+        loginTime: nowUtc,
+        ipAddress,
+        deviceInfo: deviceLabel,
+        location,
+      },
+    });
+  }
 
   await User.insertLoginAttempt({
     email,
@@ -217,6 +236,10 @@ const loginUser = asyncHandler(async function (req, res) {
 
 const regUser = asyncHandler(async function (req, res) {
   const { fname, lname, email, password } = req.body;
+
+  const ipAddress =
+    (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+    req.socket.remoteAddress;
 
   if (!fname) {
     res.status(400);
@@ -283,10 +306,19 @@ const regUser = asyncHandler(async function (req, res) {
     throw new Error("Failed to create verification token");
   }
 
-  await emailQueue.add("sendEmail", {
-    type: "VERIFY_EMAIL",
-    payload: { to: email, name: fname, token: rawToken },
-  });
+  const rl = await checkEmailRateLimit(
+    `${email}:VERIFY_EMAIL`,
+    ipAddress,
+    5,
+    60,
+  );
+
+  if (rl.allowed) {
+    await emailQueue.add("sendEmail", {
+      type: "VERIFY_EMAIL",
+      payload: { to: email, name: fname, token: rawToken },
+    });
+  }
 
   res.status(201);
   responseHandler(
