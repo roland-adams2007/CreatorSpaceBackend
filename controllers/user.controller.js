@@ -11,9 +11,6 @@ const User = require("../models/user.model.js");
 const Website = require("../models/website.model.js");
 const generateToken = require("../utils/generateToken.js");
 
-const {
-  sendLoginNotificationEmail,
-} = require("../services/emails/auth-email.service.js");
 const { getDeviceInfo, getLocation } = require("../utils/loginInfo.js");
 const emailQueue = require("../services/queues/email.queue.js");
 const { system } = require("../config/config.inc.js");
@@ -168,13 +165,16 @@ const loginUser = asyncHandler(async function (req, res) {
 
   const location = await getLocation(ipAddress);
 
-  await sendLoginNotificationEmail({
-    email: user.email,
-    userName: user.fname,
-    loginTime: nowUtc,
-    ipAddress,
-    deviceInfo: deviceLabel,
-    location,
+  await emailQueue.add("sendEmail", {
+    type: "NOTIFY_USER",
+    payload: {
+      email: user.email,
+      userName: user.fname,
+      loginTime: nowUtc,
+      ipAddress,
+      deviceInfo: deviceLabel,
+      location,
+    },
   });
 
   await User.insertLoginAttempt({
