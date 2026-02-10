@@ -54,7 +54,7 @@ async function sendLoginNotificationEmail({
 }
 
 async function sendPasswordResetEmail(email, userName, resetToken) {
-  const resetLink = `${process.env.APP_URL}/auth/reset-password?token=${resetToken}`;
+  const resetLink = `${system.APP_URL}/auth/reset-password?token=${resetToken}`;
 
   const subject = "Reset your FUS password";
 

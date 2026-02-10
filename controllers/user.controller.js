@@ -334,75 +334,8 @@ const verifyUser = asyncHandler(async function (req, res) {
   responseHandler(res, {}, "Email verified successfully. You can now log in.");
 });
 
-const sendVerifyEmail = asyncHandler(async function (req, res) {
-  const { email } = req.body;
-  if (!email) {
-    res.status(400);
-    throw new Error("Email is required");
-  }
-
-  const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
-  const user = await User.findByEmail(email);
-
-  if (!user) {
-    res.status(200);
-    return responseHandler(
-      res,
-      {},
-      "If the email exists, a verification message has been sent.",
-    );
-  }
-
-  if (user.is_active !== 1) {
-    res.status(403);
-    throw new Error("Account is inactive. Please contact support.");
-  }
-
-  if (user.email_verified_at) {
-    res.status(200);
-    return responseHandler(res, {}, "Email is already verified.");
-  }
-
-  const rawToken = generateToken();
-  const tokenHash = sha256(rawToken);
-
-  const expiresAtUtc = new Date(Date.now() + 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 19)
-    .replace("T", " ");
-
-  await User.deleteEmailTokensForUser(user.id, "verification");
-  const saved = await User.insertEmailToken({
-    email: user.email,
-    user_id: user.id,
-    type: "verification",
-    token_hash: tokenHash,
-    expires_at: expiresAtUtc,
-    created_at: nowUtc,
-  });
-
-  if (!saved) {
-    res.status(500);
-    throw new Error("Failed to create verification token. Please try again.");
-  }
-
-  await emailQueue.add("sendEmail", {
-    type: "VERIFY_EMAIL",
-    payload: { to: user.email, name: user.fname, token: rawToken },
-  });
-
-  res.status(200);
-  responseHandler(res, {}, "Verification email sent. Please check your inbox.");
-});
-
 const userCompanyCheck = asyncHandler(async function (req, res) {
   const userId = req.user?.id;
-
-  if (!userId) {
-    res.status(401);
-    throw new Error("Unauthorized");
-  }
-
   const websites = await Website.findForUser(userId);
   res.status(200);
   responseHandler(res, { websites: websites || [] }, "User websites");
@@ -418,6 +351,5 @@ module.exports = {
   regUser,
   currentUser,
   verifyUser,
-  sendVerifyEmail,
   userCompanyCheck,
 };
