@@ -173,7 +173,8 @@ const loginUser = asyncHandler(async function (req, res) {
     { expiresIn: "1d" },
   );
 
-  const location = await getLocation(ipAddress);
+  // const location = await getLocation(ipAddress);
+  const location = "Unknown";
 
   const notifyRl = await checkEmailRateLimit(
     `${user.email}:NOTIFY_USER`,
