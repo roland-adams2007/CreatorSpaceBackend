@@ -97,6 +97,56 @@ const getTheme = asyncHandler(async function (req, res) {
   responseHandler(res, { theme }, "Theme retrieved");
 });
 
+// const createTheme = asyncHandler(async function (req, res) {
+//   const { website_id, name, description, config_json } = req.body;
+//   const userId = req.user?.id;
+
+//   if (!userId) {
+//     res.status(401);
+//     throw new Error("User not authenticated");
+//   }
+
+//   if (!website_id) {
+//     res.status(400);
+//     throw new Error("Website ID is required");
+//   }
+
+//   if (!name || name.trim().length < 2) {
+//     res.status(400);
+//     throw new Error("Theme name is required");
+//   }
+
+//   const hasAccess = await Website.checkUserAccess(website_id, userId);
+//   if (!hasAccess) {
+//     res.status(403);
+//     throw new Error("Access denied to this website");
+//   }
+
+//   const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
+//   const slug = await generateUniqueSlug(name);
+
+//   const themeConfig = config_json || DEFAULT_THEME_CONFIG;
+
+//   const themeId = await Theme.create({
+//     user_id: userId,
+//     name: name.trim(),
+//     slug,
+//     config_json: themeConfig,
+//     created_at: nowUtc,
+//     updated_at: nowUtc,
+//   });
+
+//   if (!themeId) {
+//     res.status(500);
+//     throw new Error("Failed to create theme");
+//   }
+
+//   const theme = await Theme.findById(themeId);
+
+//   res.status(201);
+//   responseHandler(res, { theme }, "Theme created successfully");
+// });
+
 const createTheme = asyncHandler(async function (req, res) {
   const { website_id, name, description, config_json } = req.body;
   const userId = req.user?.id;
@@ -123,7 +173,7 @@ const createTheme = asyncHandler(async function (req, res) {
   }
 
   const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
-  const slug = await generateUniqueSlug(name, Theme);
+  const slug = await generateUniqueSlug(name, userId);
 
   const themeConfig = config_json || DEFAULT_THEME_CONFIG;
 
@@ -149,7 +199,7 @@ const createTheme = asyncHandler(async function (req, res) {
 
 const updateTheme = asyncHandler(async function (req, res) {
   const { themeId } = req.params;
-  const { name, config_json } = req.body;
+  const { name, slug, config_json } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -178,6 +228,7 @@ const updateTheme = asyncHandler(async function (req, res) {
 
   const updated = await Theme.update(themeId, {
     name: name?.trim(),
+    slug: slug ? await generateUniqueSlug(slug) : undefined,
     config_json,
     updated_at: nowUtc,
   });

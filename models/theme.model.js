@@ -35,7 +35,7 @@ const Theme = {
          ORDER BY 
            t.user_id IS NULL DESC,
            t.created_at DESC`,
-        [userId, websiteId, userId, websiteId]
+        [userId, websiteId, userId, websiteId],
       );
       return rows || [];
     } catch (error) {
@@ -53,7 +53,7 @@ const Theme = {
          FROM themes t
          LEFT JOIN users u ON t.user_id = u.id
          WHERE t.slug = ?`,
-        [slug]
+        [slug],
       );
       return rows[0];
     } catch (error) {
@@ -62,11 +62,19 @@ const Theme = {
     }
   },
 
+  findBySlugAndUser: async (slug, userId) => {
+    const [rows] = await pool.query(
+      "SELECT * FROM themes WHERE slug = ? AND user_id = ?",
+      [slug, userId],
+    );
+    return rows[0];
+  },
+
   findBySlugExcluding: async (slug, excludeId) => {
     try {
       const [rows] = await db_connection.execute(
         `SELECT id FROM themes WHERE slug = ? AND id != ?`,
-        [slug, excludeId]
+        [slug, excludeId],
       );
       return rows[0];
     } catch (error) {
@@ -84,7 +92,7 @@ const Theme = {
          FROM themes t
          LEFT JOIN users u ON t.user_id = u.id
          WHERE t.id = ?`,
-        [id]
+        [id],
       );
       return rows[0] || null;
     } catch (error) {
@@ -106,7 +114,7 @@ const Theme = {
           JSON.stringify(config_json),
           created_at,
           updated_at,
-        ]
+        ],
       );
       return result.insertId;
     } catch (error) {
@@ -117,7 +125,7 @@ const Theme = {
 
   update: async (id, data) => {
     try {
-      const { name, config_json, updated_at } = data;
+      const { name, description, slug, config_json, updated_at } = data;
       const updates = [];
       const values = [];
 
@@ -125,12 +133,18 @@ const Theme = {
         updates.push("name = ?");
         values.push(name);
       }
+
+      if (slug !== undefined) {
+        updates.push("slug = ?");
+        values.push(slug);
+      }
+
       if (config_json !== undefined) {
         updates.push("config_json = ?");
         values.push(
           typeof config_json === "string"
             ? config_json
-            : JSON.stringify(config_json)
+            : JSON.stringify(config_json),
         );
       }
       if (updated_at) {
@@ -146,7 +160,7 @@ const Theme = {
 
       const [result] = await db_connection.execute(
         `UPDATE themes SET ${updates.join(", ")} WHERE id = ?`,
-        values
+        values,
       );
       return result.affectedRows > 0;
     } catch (error) {
@@ -160,7 +174,7 @@ const Theme = {
       // Check if theme is in use by any website
       const [websitesUsing] = await db_connection.execute(
         `SELECT id FROM websites WHERE theme_id = ?`,
-        [id]
+        [id],
       );
 
       if (websitesUsing.length > 0) {
@@ -169,7 +183,7 @@ const Theme = {
 
       const [result] = await db_connection.execute(
         `DELETE FROM themes WHERE id = ? AND user_id IS NOT NULL`,
-        [id]
+        [id],
       );
       return result.affectedRows > 0;
     } catch (error) {
@@ -196,7 +210,7 @@ const Theme = {
                  )
              )
            )`,
-        [themeId, userId, userId]
+        [themeId, userId, userId],
       );
       return rows.length > 0;
     } catch (error) {

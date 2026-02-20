@@ -1,3 +1,4 @@
+const Theme = require("../models/theme.model");
 const Website = require("../models/website.model");
 
 function baseSlugify(text) {
@@ -14,12 +15,12 @@ function baseSlugify(text) {
     .replace(/-+/g, "-");
 }
 
-async function generateUniqueSlug(name) {
+async function generateUniqueSlug(name, userId) {
   try {
     let baseSlug = baseSlugify(name);
 
     if (!baseSlug || baseSlug.length < 3) {
-      baseSlug = "site";
+      baseSlug = "theme";
     }
 
     let slug = baseSlug;
@@ -28,7 +29,7 @@ async function generateUniqueSlug(name) {
 
     for (let attempts = 0; attempts < maxAttempts; attempts++) {
       try {
-        const existing = await Website.findBySlug(slug);
+        const existing = await Theme.findBySlugAndUser(slug, userId);
 
         if (!existing) {
           return slug;
@@ -37,13 +38,15 @@ async function generateUniqueSlug(name) {
         slug = `${baseSlug}-${counter}`;
         counter++;
       } catch (dbError) {
+        console.error("Database error in generateUniqueSlug:", dbError);
         return `${baseSlug}-${Date.now()}`;
       }
     }
 
     return `${baseSlug}-${Date.now()}`;
   } catch (error) {
-    return `site-${Date.now()}`;
+    console.error("Error in generateUniqueSlug:", error);
+    return `theme-${Date.now()}`;
   }
 }
 
