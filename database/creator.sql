@@ -1,7 +1,3 @@
--- =========================================================
--- AUTH TABLES
--- =========================================================
-
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   uuid CHAR(36) NOT NULL UNIQUE,
@@ -19,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_users_verified (email_verified_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+
 CREATE TABLE IF NOT EXISTS user_sessions (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -34,6 +31,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   INDEX idx_sessions_revoked (revoked_at),
   INDEX idx_sessions_last_seen (last_seen_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -52,9 +50,10 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   INDEX idx_refresh_revoked (revoked_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+
 CREATE TABLE IF NOT EXISTS email_tokens (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  email VARCHAR(190) NOT NULL ,
+  email VARCHAR(190) NOT NULL,
   user_id BIGINT UNSIGNED DEFAULT NULL,
   type VARCHAR(100) NOT NULL,
   token_hash CHAR(64) NOT NULL UNIQUE,
@@ -80,41 +79,48 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   INDEX idx_attempts_time (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- =========================================================
--- SAAS TABLES
--- =========================================================
-
-CREATE TABLE IF NOT EXISTS themes (
+CREATE TABLE IF NOT EXISTS theme_templates (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  user_id BIGINT UNSIGNED NULL,
   name VARCHAR(150) NOT NULL,
-  slug VARCHAR(150) NOT NULL,
-  config_json JSON NOT NULL,
+  slug VARCHAR(150) NOT NULL UNIQUE,
+  description TEXT NULL,
+  preview_image VARCHAR(255) NULL,
+  base_config_json JSON NOT NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
-
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
-  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-
-  UNIQUE KEY uq_theme_owner_slug (user_id, slug),
-  INDEX idx_themes_user (user_id),
-  INDEX idx_themes_active (is_active)
+  INDEX idx_theme_templates_active (is_active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 
 CREATE TABLE IF NOT EXISTS websites (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(150) NOT NULL,
   slug VARCHAR(120) NOT NULL UNIQUE,
   description TEXT NULL,
-  theme_id BIGINT UNSIGNED NULL,
+  website_theme_id BIGINT UNSIGNED NULL,
   is_published TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (theme_id) REFERENCES themes(id) ON DELETE SET NULL,
-  INDEX idx_websites_slug (slug),
-  INDEX idx_websites_theme (theme_id)
+  INDEX idx_websites_slug (slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS website_themes (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  template_id BIGINT UNSIGNED NULL,
+  name VARCHAR(150) NOT NULL,
+  slug VARCHAR(150) NOT NULL,
+  config_json JSON NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  FOREIGN KEY (template_id) REFERENCES theme_templates(id) ON DELETE SET NULL,
+
+  UNIQUE KEY uq_website_theme_slug (website_id, slug),
+  INDEX idx_website_themes_website (website_id),
+  INDEX idx_website_themes_template (template_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS website_users (
@@ -131,8 +137,7 @@ CREATE TABLE IF NOT EXISTS website_users (
   UNIQUE KEY uq_website_user (website_id, user_id),
   INDEX idx_website_users_user (user_id),
   INDEX idx_website_users_website (website_id),
-  INDEX idx_website_users_role (role),
-  INDEX idx_website_users_active (is_active)
+  INDEX idx_website_users_role (role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS pages (
@@ -156,7 +161,7 @@ CREATE TABLE IF NOT EXISTS website_assets (
   website_id BIGINT UNSIGNED NOT NULL,
   file_uuid CHAR(36) NOT NULL,
   file_original_name VARCHAR(255) NULL,
-  file_path VARCHAR(500) COLLATE utf8mb4_unicode_ci NULL,
+  file_path VARCHAR(500) NULL,
   file_name VARCHAR(255) NULL,
   file_size INT UNSIGNED NULL,
   mime_type VARCHAR(100) NULL,
@@ -167,14 +172,3 @@ CREATE TABLE IF NOT EXISTS website_assets (
   INDEX idx_assets_file_uuid (file_uuid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE TABLE IF NOT EXISTS website_theme_overrides (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  website_id BIGINT UNSIGNED NOT NULL UNIQUE,
-  overrides_json JSON NOT NULL,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- =========================================================
--- END
--- =========================================================

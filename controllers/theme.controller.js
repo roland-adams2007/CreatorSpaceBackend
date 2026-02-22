@@ -65,6 +65,7 @@ const getThemes = asyncHandler(async function (req, res) {
     res.status(403);
     throw new Error("Access denied to this website");
   }
+
   const themes = await Theme.findForWebsite(websiteId, userId);
 
   res.status(200);
@@ -97,58 +98,8 @@ const getTheme = asyncHandler(async function (req, res) {
   responseHandler(res, { theme }, "Theme retrieved");
 });
 
-// const createTheme = asyncHandler(async function (req, res) {
-//   const { website_id, name, description, config_json } = req.body;
-//   const userId = req.user?.id;
-
-//   if (!userId) {
-//     res.status(401);
-//     throw new Error("User not authenticated");
-//   }
-
-//   if (!website_id) {
-//     res.status(400);
-//     throw new Error("Website ID is required");
-//   }
-
-//   if (!name || name.trim().length < 2) {
-//     res.status(400);
-//     throw new Error("Theme name is required");
-//   }
-
-//   const hasAccess = await Website.checkUserAccess(website_id, userId);
-//   if (!hasAccess) {
-//     res.status(403);
-//     throw new Error("Access denied to this website");
-//   }
-
-//   const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
-//   const slug = await generateUniqueSlug(name);
-
-//   const themeConfig = config_json || DEFAULT_THEME_CONFIG;
-
-//   const themeId = await Theme.create({
-//     user_id: userId,
-//     name: name.trim(),
-//     slug,
-//     config_json: themeConfig,
-//     created_at: nowUtc,
-//     updated_at: nowUtc,
-//   });
-
-//   if (!themeId) {
-//     res.status(500);
-//     throw new Error("Failed to create theme");
-//   }
-
-//   const theme = await Theme.findById(themeId);
-
-//   res.status(201);
-//   responseHandler(res, { theme }, "Theme created successfully");
-// });
-
 const createTheme = asyncHandler(async function (req, res) {
-  const { website_id, name, description, config_json } = req.body;
+  const { website_id, template_id, name, config_json } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -173,12 +124,39 @@ const createTheme = asyncHandler(async function (req, res) {
   }
 
   const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
-  const slug = await generateUniqueSlug(name, userId);
 
-  const themeConfig = config_json || DEFAULT_THEME_CONFIG;
+  // Generate unique slug for the website
+  const slug = await generateUniqueSlug(name, async (slug) => {
+    const existing = await Theme.findBySlugAndWebsite(slug, website_id);
+    return existing;
+  });
 
+  // If template_id is provided, load template config
+  let themeConfig = config_json;
+
+  // if coming from template
+  if (template_id && !config_json) {
+    const template = await Theme.getTemplateById(template_id);
+    if (template?.base_config_json) {
+      themeConfig =
+        typeof template.base_config_json === "string"
+          ? JSON.parse(template.base_config_json)
+          : template.base_config_json;
+    }
+  }
+
+  // fallback
+  if (!themeConfig) {
+    themeConfig = DEFAULT_THEME_CONFIG;
+  }
+
+  // VERY IMPORTANT
+  if (typeof themeConfig === "string") {
+    themeConfig = JSON.parse(themeConfig);
+  }
   const themeId = await Theme.create({
-    user_id: userId,
+    website_id,
+    template_id: template_id || null,
     name: name.trim(),
     slug,
     config_json: themeConfig,
@@ -199,7 +177,7 @@ const createTheme = asyncHandler(async function (req, res) {
 
 const updateTheme = asyncHandler(async function (req, res) {
   const { themeId } = req.params;
-  const { name, slug, config_json } = req.body;
+  const { name, config_json } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -214,24 +192,24 @@ const updateTheme = asyncHandler(async function (req, res) {
     throw new Error("Theme not found");
   }
 
-  if (theme.user_id === null) {
-    res.status(403);
-    throw new Error("Cannot edit system themes");
-  }
-
-  if (theme.user_id !== userId) {
+  const hasAccess = await Theme.checkUserAccess(themeId, userId);
+  if (!hasAccess) {
     res.status(403);
     throw new Error("Access denied to this theme");
   }
 
   const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
 
-  const updated = await Theme.update(themeId, {
+  const updateData = {
     name: name?.trim(),
-    slug: slug ? await generateUniqueSlug(slug) : undefined,
-    config_json,
     updated_at: nowUtc,
-  });
+  };
+
+  if (config_json !== undefined) {
+    updateData.config_json = config_json;
+  }
+
+  const updated = await Theme.update(themeId, updateData);
 
   if (!updated) {
     res.status(500);
@@ -260,25 +238,31 @@ const deleteTheme = asyncHandler(async function (req, res) {
     throw new Error("Theme not found");
   }
 
-  if (theme.user_id === null) {
-    res.status(403);
-    throw new Error("Cannot delete system themes");
-  }
-
-  if (theme.user_id !== userId) {
+  const hasAccess = await Theme.checkUserAccess(themeId, userId);
+  if (!hasAccess) {
     res.status(403);
     throw new Error("Access denied to this theme");
   }
 
-  const deleted = await Theme.delete(themeId);
+  try {
+    const deleted = await Theme.delete(themeId);
 
-  if (!deleted) {
-    res.status(500);
-    throw new Error("Failed to delete theme");
+    if (!deleted) {
+      res.status(500);
+      throw new Error("Failed to delete theme");
+    }
+
+    res.status(200);
+    responseHandler(res, null, "Theme deleted successfully");
+  } catch (error) {
+    if (
+      error.message.includes("Cannot delete theme that is currently active")
+    ) {
+      res.status(400);
+      throw error;
+    }
+    throw error;
   }
-
-  res.status(200);
-  responseHandler(res, null, "Theme deleted successfully");
 });
 
 const setActiveTheme = asyncHandler(async function (req, res) {
@@ -308,10 +292,16 @@ const setActiveTheme = asyncHandler(async function (req, res) {
     throw new Error("Theme not found");
   }
 
+  // Verify theme belongs to this website
+  if (parseInt(theme.website_id) !== parseInt(website_id)) {
+    res.status(403);
+    throw new Error("Theme does not belong to this website");
+  }
+
   try {
     const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
     await db_connection.execute(
-      `UPDATE websites SET theme_id = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE websites SET website_theme_id = ?, updated_at = ? WHERE id = ?`,
       [themeId, nowUtc, website_id],
     );
 
@@ -324,6 +314,13 @@ const setActiveTheme = asyncHandler(async function (req, res) {
   }
 });
 
+// New controller to get available templates
+const getTemplates = asyncHandler(async function (req, res) {
+  const templates = await Theme.getTemplates();
+  res.status(200);
+  responseHandler(res, { templates }, "Templates retrieved");
+});
+
 module.exports = {
   getThemes,
   getTheme,
@@ -331,4 +328,5 @@ module.exports = {
   updateTheme,
   deleteTheme,
   setActiveTheme,
+  getTemplates,
 };

@@ -29,7 +29,7 @@ async function generateUniqueSlug(name, userId) {
 
     for (let attempts = 0; attempts < maxAttempts; attempts++) {
       try {
-        const existing = await Theme.findBySlugAndUser(slug, userId);
+        const existing = await Theme.findBySlugAndWebsite(slug, userId);
 
         if (!existing) {
           return slug;

@@ -7,10 +7,15 @@ const {
   updateTheme,
   deleteTheme,
   setActiveTheme,
+  getTemplates,
 } = require("../controllers/theme.controller");
 
 const router = express.Router();
 
+// Templates routes (public templates)
+router.get("/templates", validateTokenHandler, getTemplates);
+
+// Theme routes
 router.get("/", validateTokenHandler, getThemes);
 router.get("/:themeSlug", validateTokenHandler, getTheme);
 router.post("/create", validateTokenHandler, createTheme);
