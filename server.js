@@ -35,6 +35,7 @@ app.use("/users", require("./routes/user.route"));
 app.use("/websites", require("./routes/website.route"));
 app.use("/themes", require("./routes/theme.route"));
 app.use("/assets", require("./routes/asset.route"));
+app.use("/public", require("./routes/public.route"));
 
 app.use((req, res, next) => {
   return res.status(404).json({

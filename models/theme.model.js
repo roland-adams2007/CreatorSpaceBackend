@@ -34,7 +34,6 @@ const Theme = {
    )
 
    WHERE wt.website_id = ?
-     AND wt.is_active = 1
      AND EXISTS (
        SELECT 1
        FROM website_users wu2
@@ -166,7 +165,7 @@ const Theme = {
       const [result] = await db_connection.execute(
         `INSERT INTO website_themes
        (website_id, template_id, name, slug, config_json, created_at, updated_at, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
         [
           website_id,
           template_id || null,

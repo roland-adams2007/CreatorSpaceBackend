@@ -305,6 +305,11 @@ const setActiveTheme = asyncHandler(async function (req, res) {
       [themeId, nowUtc, website_id],
     );
 
+    await db_connection.execute(
+      `UPDATE website_themes SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE website_id = ?`,
+      [themeId, website_id],
+    );
+
     res.status(200);
     responseHandler(res, null, "Active theme set successfully");
   } catch (error) {
@@ -321,6 +326,262 @@ const getTemplates = asyncHandler(async function (req, res) {
   responseHandler(res, { templates }, "Templates retrieved");
 });
 
+const getPublicTheme = asyncHandler(async function (req, res) {
+  const { themeSlug } = req.params;
+
+  // Get theme by slug with website info to check if website is published
+  const [themes] = await db_connection.execute(
+    `SELECT wt.*, w.is_published as website_published, w.slug as website_slug
+     FROM website_themes wt
+     JOIN websites w ON wt.website_id = w.id
+     WHERE wt.slug = ?`,
+    [themeSlug],
+  );
+
+  if (!themes || themes.length === 0) {
+    res.status(404);
+    throw new Error("Theme not found");
+  }
+
+  const theme = themes[0];
+  const isPreview = req.query.preview === "true";
+
+  // Check if website is published (unless preview mode)
+  if (!isPreview && theme.website_published != 1) {
+    res.status(403);
+    throw new Error("Website for this theme is not published");
+  }
+
+  // Parse config_json if it's a string
+  if (theme.config_json && typeof theme.config_json === "string") {
+    try {
+      theme.config_json = JSON.parse(theme.config_json);
+    } catch (e) {
+      console.error("Failed to parse theme config_json:", e);
+    }
+  }
+
+  // Remove internal fields
+  delete theme.website_published;
+
+  res.status(200);
+  responseHandler(res, { theme }, "Theme retrieved");
+});
+
+const getPublicWebsiteInfo = asyncHandler(async function (req, res) {
+  const { websiteSlug } = req.params;
+
+  const [websites] = await db_connection.execute(
+    `SELECT id, name, slug, is_published, website_theme_id, created_at, updated_at 
+     FROM websites 
+     WHERE slug = ?`,
+    [websiteSlug],
+  );
+
+  if (!websites || websites.length === 0) {
+    res.status(404);
+    throw new Error("Website not found");
+  }
+
+  const website = websites[0];
+  const isPreview = req.query.preview === "true";
+
+  if (!isPreview && website.is_published != 1) {
+    res.status(403);
+    throw new Error("This website is not published");
+  }
+
+  const publicWebsiteInfo = {
+    id: website.id,
+    name: website.name,
+    slug: website.slug,
+    is_published: website.is_published == 1,
+    website_theme_id: website.website_theme_id,
+    created_at: website.created_at,
+    updated_at: website.updated_at,
+  };
+
+  res.status(200);
+  responseHandler(
+    res,
+    { website: publicWebsiteInfo },
+    "Website info retrieved",
+  );
+});
+
+const getPublicActiveTheme = asyncHandler(async function (req, res) {
+  const { websiteSlug } = req.params;
+
+  // First get the website to check if it's published
+  const [websites] = await db_connection.execute(
+    `SELECT id, name, slug, is_published 
+     FROM websites 
+     WHERE slug = ?`,
+    [websiteSlug],
+  );
+
+  if (!websites || websites.length === 0) {
+    res.status(404);
+    throw new Error("Website not found");
+  }
+
+  const website = websites[0];
+
+  // Check if website is published (unless preview mode)
+  const isPreview = req.query.preview === "true";
+
+  if (!isPreview && website.is_published != 1) {
+    res.status(403);
+    throw new Error("This website is not published");
+  }
+
+  // Get the active theme for the website
+  const [themes] = await db_connection.execute(
+    `SELECT wt.*, tt.name as template_name, tt.slug as template_slug
+     FROM website_themes wt
+     LEFT JOIN theme_templates tt ON wt.template_id = tt.id
+     WHERE wt.website_id = ? AND wt.is_active = 1`,
+    [website.id],
+  );
+
+  if (!themes || themes.length === 0) {
+    res.status(404);
+    throw new Error("No active theme found for this website");
+  }
+
+  const activeTheme = themes[0];
+
+  // Parse config_json if it's a string
+  if (activeTheme.config_json && typeof activeTheme.config_json === "string") {
+    try {
+      activeTheme.config_json = JSON.parse(activeTheme.config_json);
+    } catch (e) {
+      console.error("Failed to parse theme config_json:", e);
+    }
+  }
+
+  res.status(200);
+  responseHandler(res, { theme: activeTheme }, "Active theme retrieved");
+});
+
+// Get all themes for a website (public)
+const getPublicWebsiteThemes = asyncHandler(async function (req, res) {
+  const { websiteSlug } = req.params;
+
+  // First verify website exists and is published
+  const [websites] = await db_connection.execute(
+    `SELECT id, is_published FROM websites WHERE slug = ?`,
+    [websiteSlug],
+  );
+
+  if (!websites || websites.length === 0) {
+    res.status(404);
+    throw new Error("Website not found");
+  }
+
+  const website = websites[0];
+  const isPreview = req.query.preview === "true";
+
+  // Only return themes if website is published (unless preview mode)
+  if (!isPreview && website.is_published != 1) {
+    res.status(403);
+    throw new Error("Website is not published");
+  }
+
+  // Get all themes for this website
+  const [themes] = await db_connection.execute(
+    `SELECT wt.id, wt.name, wt.slug, wt.template_id, wt.is_active, 
+            wt.created_at, wt.updated_at, tt.name as template_name
+     FROM website_themes wt
+     LEFT JOIN theme_templates tt ON wt.template_id = tt.id
+     WHERE wt.website_id = ?
+     ORDER BY wt.is_active DESC, wt.created_at DESC`,
+    [website.id],
+  );
+
+  res.status(200);
+  responseHandler(res, { themes }, "Website themes retrieved");
+});
+
+// Get theme by slug for a specific website
+const getPublicWebsiteTheme = asyncHandler(async function (req, res) {
+  const { websiteSlug, themeSlug } = req.params;
+
+  // First verify website exists and is published
+  const [websites] = await db_connection.execute(
+    `SELECT id, is_published FROM websites WHERE slug = ?`,
+    [websiteSlug],
+  );
+
+  if (!websites || websites.length === 0) {
+    res.status(404);
+    throw new Error("Website not found");
+  }
+
+  const website = websites[0];
+  const isPreview = req.query.preview === "true";
+
+  if (!isPreview && website.is_published != 1) {
+    res.status(403);
+    throw new Error("Website is not published");
+  }
+
+  // Get the specific theme
+  const [themes] = await db_connection.execute(
+    `SELECT wt.*, tt.name as template_name
+     FROM website_themes wt
+     LEFT JOIN theme_templates tt ON wt.template_id = tt.id
+     WHERE wt.website_id = ? AND wt.slug = ?`,
+    [website.id, themeSlug],
+  );
+
+  if (!themes || themes.length === 0) {
+    res.status(404);
+    throw new Error("Theme not found");
+  }
+
+  const theme = themes[0];
+
+  // Parse config_json if it's a string
+  if (theme.config_json && typeof theme.config_json === "string") {
+    try {
+      theme.config_json = JSON.parse(theme.config_json);
+    } catch (e) {
+      console.error("Failed to parse theme config_json:", e);
+    }
+  }
+
+  res.status(200);
+  responseHandler(res, { theme }, "Theme retrieved");
+});
+
+// Get all published templates (public)
+const getPublicTemplates = asyncHandler(async function (req, res) {
+  const [templates] = await db_connection.execute(
+    `SELECT id, name, slug, description, preview_image, base_config_json, created_at
+     FROM theme_templates
+     WHERE is_active = 1
+     ORDER BY name ASC`,
+  );
+
+  // Parse base_config_json for each template
+  templates.forEach((template) => {
+    if (
+      template.base_config_json &&
+      typeof template.base_config_json === "string"
+    ) {
+      try {
+        template.base_config_json = JSON.parse(template.base_config_json);
+      } catch (e) {
+        console.error("Failed to parse template base_config_json:", e);
+      }
+    }
+  });
+
+  res.status(200);
+  responseHandler(res, { templates }, "Templates retrieved");
+});
+
 module.exports = {
   getThemes,
   getTheme,
@@ -329,4 +590,8 @@ module.exports = {
   deleteTheme,
   setActiveTheme,
   getTemplates,
+  getPublicTheme,
+  getPublicWebsiteInfo,
+  getPublicActiveTheme,
+  getPublicWebsiteThemes,
 };
