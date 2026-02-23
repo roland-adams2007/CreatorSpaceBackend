@@ -7,7 +7,7 @@ const axios = require("axios");
 const { file_config } = require("../config/config.inc.js");
 
 const getAssets = asyncHandler(async function (req, res) {
-  const { website_id } = req.query;
+  const { website_id, page = 1, per_page = 10 } = req.query;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -26,10 +26,30 @@ const getAssets = asyncHandler(async function (req, res) {
     throw new Error("Access denied to this website");
   }
 
-  const assets = await Asset.findByWebsite(website_id);
+  const currentPage = parseInt(page);
+  const limit = parseInt(per_page);
+  const offset = (currentPage - 1) * limit;
+
+  const { assets, total } = await Asset.findByWebsite(
+    website_id,
+    limit,
+    offset,
+  );
 
   res.status(200);
-  responseHandler(res, { assets }, "Assets retrieved");
+  responseHandler(
+    res,
+    {
+      assets,
+      meta: {
+        current_page: currentPage,
+        per_page: limit,
+        total,
+        last_page: Math.ceil(total / limit),
+      },
+    },
+    "Assets retrieved",
+  );
 });
 
 const uploadAsset = asyncHandler(async function (req, res) {

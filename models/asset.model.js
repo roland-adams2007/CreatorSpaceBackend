@@ -1,17 +1,28 @@
 const { db_connection } = require("../config/config.inc");
 
 const Asset = {
-  findByWebsite: async (websiteId) => {
+  findByWebsite: async (websiteId, limit, offset) => {
     try {
       const [rows] = await db_connection.execute(
-        `SELECT * FROM website_assets 
-         WHERE website_id = ? 
-         ORDER BY created_at DESC`,
+        `SELECT * FROM website_assets
+       WHERE website_id = ?
+       ORDER BY created_at DESC
+       LIMIT ? OFFSET ?`,
+        [websiteId, limit, offset],
+      );
+
+      const [countResult] = await db_connection.execute(
+        `SELECT COUNT(*) as total
+       FROM website_assets
+       WHERE website_id = ?`,
         [websiteId],
       );
-      return rows || [];
+
+      const total = countResult[0]?.total || 0;
+
+      return { assets: rows || [], total };
     } catch (error) {
-      return [];
+      return { assets: [], total: 0 };
     }
   },
 
