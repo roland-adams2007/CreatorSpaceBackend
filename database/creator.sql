@@ -183,3 +183,27 @@ CREATE TABLE IF NOT EXISTS forms (
     REFERENCES websites(id)
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS team_invitations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  email VARCHAR(190) NOT NULL,
+  invited_by BIGINT UNSIGNED NOT NULL,
+  role ENUM('owner','admin','editor','viewer') NOT NULL DEFAULT 'editor',
+  token_hash CHAR(64) NOT NULL UNIQUE,
+  status ENUM('pending','accepted','declined','expired') NOT NULL DEFAULT 'pending',
+  expires_at DATETIME NOT NULL,
+  accepted_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE CASCADE,
+  
+  UNIQUE KEY uq_pending_invitation (website_id, email, status),
+  INDEX idx_team_inv_website (website_id),
+  INDEX idx_team_inv_email (email),
+  INDEX idx_team_inv_token (token_hash),
+  INDEX idx_team_inv_status (status),
+  INDEX idx_team_inv_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -44,13 +44,19 @@ const Website = {
 
   findById: async (id, userId) => {
     try {
-      const [rows] = await db_connection.execute(
-        `SELECT w.id, w.name, w.slug, w.is_published, w.created_at, w.updated_at
-         FROM websites w
-         JOIN website_users wu ON w.id = wu.website_id
-         WHERE w.id = ? AND wu.user_id = ? AND wu.is_active = 1`,
-        [id, userId],
-      );
+      let query = `SELECT w.id, w.name, w.slug, w.is_published, w.created_at, w.updated_at
+                   FROM websites w`;
+      let params = [id];
+
+      if (userId) {
+        query += ` JOIN website_users wu ON w.id = wu.website_id
+                   WHERE w.id = ? AND wu.user_id = ? AND wu.is_active = 1`;
+        params.push(userId);
+      } else {
+        query += ` WHERE w.id = ?`;
+      }
+
+      const [rows] = await db_connection.execute(query, params);
       return rows[0] || null;
     } catch {
       return null;

@@ -11,6 +11,19 @@ const User = {
     return rows[0] || null;
   },
 
+  findById: async (id) => {
+    try {
+      const [rows] = await db_connection.execute(
+        `SELECT id, uuid, fname, lname, email, is_active, email_verified_at, last_login_at, created_at
+         FROM users WHERE id = ? LIMIT 1`,
+        [id]
+      );
+      return rows[0] || null;
+    } catch {
+      return null;
+    }
+  },
+
   create: async ({ fname, lname, uuid, email, password_hash, is_active, created_at }) => {
     try {
       const [result] = await db_connection.execute(
