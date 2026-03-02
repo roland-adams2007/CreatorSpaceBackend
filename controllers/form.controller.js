@@ -9,22 +9,10 @@ const Form = require("../models/form.model.js");
 const sendForm = asyncHandler(async function (req, res) {
   const nowUtc = new Date().toISOString().slice(0, 19).replace("T", " ");
   const { website_id, section_type, section_id, data } = req.body;
-  const userId = req.user?.id;
-
-  if (!userId) {
-    res.status(401);
-    throw new Error("User not authenticated");
-  }
 
   if (!website_id) {
     res.status(400);
     throw new Error("Website ID is required");
-  }
-
-  const hasAccess = await Website.checkUserAccess(website_id, userId);
-  if (!hasAccess) {
-    res.status(403);
-    throw new Error("Access denied to this website");
   }
 
   const form_data = {
@@ -50,12 +38,7 @@ const sendForm = asyncHandler(async function (req, res) {
 const fetchForms = asyncHandler(async function (req, res) {
   const websiteId = req.query.website_id;
   const userId = req.user?.id;
-
-  if (!userId) {
-    res.status(401);
-    throw new Error("User not authenticated");
-  }
-
+  u;
   if (!websiteId) {
     res.status(400);
     throw new Error("Website ID is required");

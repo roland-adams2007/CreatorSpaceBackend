@@ -1,9 +1,8 @@
 const asyncHandler = require("express-async-handler");
 const { responseHandler } = require("../middleware/responseHandler.js");
-const generateUUID = require("../utils/generateUUID.js");
 const Website = require("../models/website.model.js");
-
 const generateUniqueSlug = require("../utils/slugify.js");
+const Team = require("../models/team.modal.js");
 
 const createWebsite = asyncHandler(async function (req, res) {
   const { name } = req.body;
@@ -98,8 +97,21 @@ const getWebsite = asyncHandler(async function (req, res) {
     throw new Error("Website not found or access denied");
   }
 
+  const userRole = await Website.getUserRole(websiteId, userId);
+
+  if (
+    !userRole ||
+    (userRole !== "owner" &&
+      userRole !== "admin" &&
+      userRole !== "editor" &&
+      userRole !== "viewer")
+  ) {
+    res.status(403);
+    throw new Error("Access denied");
+  }
+
   res.status(200);
-  responseHandler(res, { website }, "Website retrieved");
+  responseHandler(res, { website, userRole: userRole }, "Website retrieved");
 });
 
 const updateWebsite = asyncHandler(async function (req, res) {
@@ -117,7 +129,7 @@ const updateWebsite = asyncHandler(async function (req, res) {
   }
   if (!slug || slug.trim().length < 2) {
     res.status(400);
-    throw new Error("Slug  is required");
+    throw new Error("Slug is required");
   }
 
   const website = await Website.findById(websiteId, userId);
@@ -125,6 +137,18 @@ const updateWebsite = asyncHandler(async function (req, res) {
   if (!website) {
     res.status(404);
     throw new Error("Website not found or access denied");
+  }
+
+  const userRole = await Website.getUserRole(websiteId, userId);
+
+  if (
+    !userRole ||
+    (userRole !== "owner" && userRole !== "admin" && userRole !== "editor")
+  ) {
+    res.status(403);
+    throw new Error(
+      "Access denied. Only owners, admins, and editors can update websites",
+    );
   }
 
   const updated = await Website.updateById(websiteId, {
@@ -145,9 +169,43 @@ const updateWebsite = asyncHandler(async function (req, res) {
   responseHandler(res, updatedWebsite, "Website updated successfully");
 });
 
+const deleteWebsite = asyncHandler(async function (req, res) {
+  const userId = req.user?.id;
+  const { websiteId } = req.params;
+
+  if (!websiteId) {
+    res.status(400);
+    throw new Error("Website ID is required");
+  }
+
+  const website = await Website.findById(websiteId, userId);
+
+  if (!website) {
+    res.status(404);
+    throw new Error("Website not found or access denied");
+  }
+
+  const userRole = await Website.getUserRole(websiteId, userId);
+  if (!userRole || userRole !== "owner") {
+    res.status(403);
+    throw new Error("Access denied. Only owners can delete websites");
+  }
+
+  const deleted = await Website.deleteById(websiteId);
+
+  if (!deleted) {
+    res.status(500);
+    throw new Error("Failed to delete website");
+  }
+
+  res.status(200);
+  responseHandler(res, {}, "Website deleted successfully");
+});
+
 module.exports = {
   createWebsite,
   getWebsites,
   getWebsite,
   updateWebsite,
+  deleteWebsite,
 };

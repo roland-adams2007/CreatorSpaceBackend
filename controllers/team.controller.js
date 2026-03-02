@@ -274,6 +274,30 @@ const fetchInvitationDetails = asyncHandler(async function (req, res) {
   );
 });
 
+const updateRole = asyncHandler(async function (req, res) {
+  const { memberId } = req.params;
+  const { role } = req.body;
+
+  if (!memberId) {
+    res.status(400);
+    throw new Error("Member ID is required");
+  }
+
+  if (!["owner", "admin", "editor", "viewer"].includes(role)) {
+    res.status(400);
+    throw new Error("Invalid role specified");
+  }
+
+  const success = await Team.updateMemberRole(memberId, role);
+
+  if (!success) {
+    res.status(500);
+    throw new Error("Failed to update member role.");
+  }
+
+  responseHandler(res, {}, "Member role updated successfully!");
+});
+
 module.exports = {
   sendTeamInvite,
   acceptTeamInvite,
@@ -282,4 +306,5 @@ module.exports = {
   removeMember,
   declineInvitation,
   fetchInvitationDetails,
+  updateRole,
 };

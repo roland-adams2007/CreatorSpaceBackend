@@ -177,7 +177,7 @@ const Team = {
   updateMemberRole: async (memberId, role) => {
     try {
       const [result] = await db_connection.execute(
-        `UPDATE website_users SET role = ?, updated_at = NOW() WHERE id = ?`,
+        `UPDATE website_users SET role = ? WHERE id = ?`,
         [role, memberId],
       );
       return result.affectedRows > 0;

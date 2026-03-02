@@ -38,6 +38,7 @@ app.use("/assets", require("./routes/asset.route"));
 app.use("/public", require("./routes/public.route"));
 app.use("/forms", require("./routes/form.route"));
 app.use("/team", require("./routes/team.route"));
+app.use("/analytics", require("./routes/analytics.route"));
 
 app.use((req, res, next) => {
   return res.status(404).json({

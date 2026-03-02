@@ -132,6 +132,31 @@ const Website = {
       return false;
     }
   },
+  getUserRole: async (websiteId, userId) => {
+    try {
+      const [rows] = await db_connection.execute(
+        `SELECT role FROM website_users 
+         WHERE website_id = ? AND user_id = ? AND is_active = 1`,
+        [websiteId, userId],
+      );
+      return rows[0]?.role || null;
+    } catch {
+      return null;
+    }
+  },
+
+  deleteById: async (id) => {
+    try {
+      const [result] = await db_connection.execute(
+        `DELETE FROM websites WHERE id = ?`,
+        [id],
+      );
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.log(error);
+      return false;
+    }
+  },
 };
 
 module.exports = Website;

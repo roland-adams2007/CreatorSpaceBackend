@@ -207,3 +207,175 @@ CREATE TABLE IF NOT EXISTS team_invitations (
   INDEX idx_team_inv_status (status),
   INDEX idx_team_inv_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Page views tracking
+CREATE TABLE IF NOT EXISTS page_views (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  page_id BIGINT UNSIGNED NULL,
+  visitor_id CHAR(36) NOT NULL,
+  session_id CHAR(36) NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(512) NULL,
+  referer_url VARCHAR(500) NULL,
+  page_url VARCHAR(500) NOT NULL,
+  view_duration INT UNSIGNED NULL, -- in seconds
+  device_type ENUM('desktop','mobile','tablet','bot') NULL,
+  browser VARCHAR(100) NULL,
+  os VARCHAR(100) NULL,
+  country_code CHAR(2) NULL,
+  city VARCHAR(100) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL,
+  
+  INDEX idx_page_views_website (website_id),
+  INDEX idx_page_views_page (page_id),
+  INDEX idx_page_views_visitor (visitor_id),
+  INDEX idx_page_views_session (session_id),
+  INDEX idx_page_views_date (created_at),
+  INDEX idx_page_views_country (country_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Visitor sessions
+CREATE TABLE IF NOT EXISTS visitor_sessions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  visitor_id CHAR(36) NOT NULL,
+  session_id CHAR(36) NOT NULL UNIQUE,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(512) NULL,
+  device_type ENUM('desktop','mobile','tablet','bot') NULL,
+  browser VARCHAR(100) NULL,
+  os VARCHAR(100) NULL,
+  country_code CHAR(2) NULL,
+  city VARCHAR(100) NULL,
+  entry_page VARCHAR(500) NULL,
+  exit_page VARCHAR(500) NULL,
+  page_views INT UNSIGNED DEFAULT 1,
+  session_duration INT UNSIGNED NULL, -- in seconds
+  is_bounce TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_activity TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  
+  INDEX idx_visitor_sessions_website (website_id),
+  INDEX idx_visitor_sessions_visitor (visitor_id),
+  INDEX idx_visitor_sessions_session (session_id),
+  INDEX idx_visitor_sessions_last_activity (last_activity),
+  INDEX idx_visitor_sessions_date (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Form submissions analytics
+CREATE TABLE IF NOT EXISTS form_analytics (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  form_id BIGINT UNSIGNED NULL,
+  visitor_id CHAR(36) NOT NULL,
+  form_name VARCHAR(150) NULL,
+  start_time DATETIME NULL,
+  completion_time DATETIME NULL,
+  is_completed TINYINT(1) DEFAULT 0,
+  field_interactions JSON NULL, -- track which fields were interacted with
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  FOREIGN KEY (form_id) REFERENCES forms(id) ON DELETE SET NULL,
+  
+  INDEX idx_form_analytics_website (website_id),
+  INDEX idx_form_analytics_form (form_id),
+  INDEX idx_form_analytics_visitor (visitor_id),
+  INDEX idx_form_analytics_completed (is_completed)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Website events (custom events you want to track)
+CREATE TABLE IF NOT EXISTS website_events (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  visitor_id CHAR(36) NOT NULL,
+  session_id CHAR(36) NULL,
+  event_name VARCHAR(100) NOT NULL,
+  event_category VARCHAR(100) NULL,
+  event_label VARCHAR(255) NULL,
+  event_value INT NULL,
+  page_url VARCHAR(500) NULL,
+  element_selector VARCHAR(255) NULL,
+  event_data JSON NULL, -- additional custom data
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  
+  INDEX idx_website_events_website (website_id),
+  INDEX idx_website_events_visitor (visitor_id),
+  INDEX idx_website_events_name (event_name),
+  INDEX idx_website_events_category (event_category),
+  INDEX idx_website_events_date (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Performance metrics
+CREATE TABLE IF NOT EXISTS performance_metrics (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  page_id BIGINT UNSIGNED NULL,
+  visitor_id CHAR(36) NULL,
+  page_url VARCHAR(500) NOT NULL,
+  load_time INT UNSIGNED NULL, -- in milliseconds
+  dom_interactive INT UNSIGNED NULL,
+  first_paint INT UNSIGNED NULL,
+  first_contentful_paint INT UNSIGNED NULL,
+  time_to_interactive INT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE SET NULL,
+  
+  INDEX idx_performance_website (website_id),
+  INDEX idx_performance_page (page_id),
+  INDEX idx_performance_date (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- GeoIP cache (to avoid repeated lookups)
+CREATE TABLE IF NOT EXISTS geoip_cache (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  ip_address VARCHAR(45) NOT NULL UNIQUE,
+  country_code CHAR(2) NULL,
+  country_name VARCHAR(100) NULL,
+  city VARCHAR(100) NULL,
+  latitude DECIMAL(10,8) NULL,
+  longitude DECIMAL(11,8) NULL,
+  timezone VARCHAR(50) NULL,
+  isp VARCHAR(200) NULL,
+  organization VARCHAR(200) NULL,
+  last_queried TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  query_count INT UNSIGNED DEFAULT 1,
+  
+  INDEX idx_geoip_ip (ip_address),
+  INDEX idx_geoip_country (country_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Daily rollup tables for faster reporting
+CREATE TABLE IF NOT EXISTS daily_stats (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  website_id BIGINT UNSIGNED NOT NULL,
+  stat_date DATE NOT NULL,
+  page_views INT UNSIGNED DEFAULT 0,
+  unique_visitors INT UNSIGNED DEFAULT 0,
+  new_visitors INT UNSIGNED DEFAULT 0,
+  returning_visitors INT UNSIGNED DEFAULT 0,
+  sessions INT UNSIGNED DEFAULT 0,
+  bounce_rate DECIMAL(5,2) DEFAULT 0,
+  avg_session_duration DECIMAL(10,2) DEFAULT 0,
+  avg_page_views_per_session DECIMAL(5,2) DEFAULT 0,
+  form_submissions INT UNSIGNED DEFAULT 0,
+  form_completion_rate DECIMAL(5,2) DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (website_id) REFERENCES websites(id) ON DELETE CASCADE,
+  UNIQUE KEY uq_daily_stats (website_id, stat_date),
+  
+  INDEX idx_daily_stats_website (website_id),
+  INDEX idx_daily_stats_date (stat_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -8,6 +8,7 @@ const {
   removeMember,
   declineInvitation,
   fetchInvitationDetails,
+  updateRole,
 } = require("../controllers/team.controller");
 
 const router = express.Router();
@@ -25,5 +26,6 @@ router.get(
   getPendingInvitations,
 );
 router.get("/invite/:token", fetchInvitationDetails);
+router.patch("/:memberId/role", validateTokenHandler, updateRole);
 
 module.exports = router;
