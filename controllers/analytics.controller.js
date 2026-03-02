@@ -1,24 +1,121 @@
 const asyncHandler = require("express-async-handler");
-const https = require("https");
-const http = require("http");
 const { responseHandler } = require("../middleware/responseHandler.js");
 const Analytics = require("../models/analytics.model.js");
 const Website = require("../models/website.model.js");
 const UAParser = require("ua-parser-js");
 
-const getDateRange = (range) => {
-  const to = new Date();
-  const from = new Date();
-  switch (range) {
-    case "7d":  from.setDate(from.getDate() - 7);  break;
-    case "30d": from.setDate(from.getDate() - 30); break;
-    case "90d": from.setDate(from.getDate() - 90); break;
-    default:    from.setDate(from.getDate() - 30);
+// ─── GeoIP ────────────────────────────────────────────────────────────────────
+// Strategy: try geoip-lite first (offline, fast, no rate limit).
+// If not installed, fall back to ip-api.com via axios.
+
+let geoipLite = null;
+try {
+  geoipLite = require("geoip-lite");
+} catch {
+  // not installed — will use HTTP fallback
+}
+
+const isPrivateIP = (ip) => {
+  if (!ip) return true;
+  const clean = ip.replace(/^::ffff:/, "");
+  return (
+    clean === "127.0.0.1" ||
+    clean === "::1" ||
+    clean === "localhost" ||
+    clean.startsWith("10.") ||
+    clean.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(clean)
+  );
+};
+
+const lookupViaHTTP = async (ip) => {
+  try {
+    // Use axios — already a project dependency
+    const axios = require("axios");
+    const { data } = await axios.get(
+      `http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,lat,lon,timezone,isp,org`,
+      { timeout: 4000 }
+    );
+    if (data?.status === "success") {
+      return {
+        country_code:  data.countryCode  || null,
+        country_name:  data.country      || null,
+        city:          data.city         || null,
+        latitude:      data.lat          || null,
+        longitude:     data.lon          || null,
+        timezone:      data.timezone     || null,
+        isp:           data.isp          || null,
+        organization:  data.org          || null,
+      };
+    }
+  } catch (err) {
+    console.warn("[GeoIP] HTTP lookup failed:", err.message);
   }
-  return {
-    from: from.toISOString().slice(0, 19).replace("T", " "),
-    to:   to.toISOString().slice(0, 19).replace("T", " "),
+  return null;
+};
+
+const lookupViaGeoipLite = (ip) => {
+  try {
+    const geo = geoipLite.lookup(ip);
+    if (!geo) return null;
+    return {
+      country_code:  geo.country   || null,
+      country_name:  geo.country   || null, // geoip-lite doesn't give full name
+      city:          geo.city      || null,
+      latitude:      geo.ll?.[0]   || null,
+      longitude:     geo.ll?.[1]   || null,
+      timezone:      geo.timezone  || null,
+      isp:           null,
+      organization:  null,
+    };
+  } catch (err) {
+    console.warn("[GeoIP] geoip-lite lookup failed:", err.message);
+    return null;
+  }
+};
+
+const resolveGeo = async (ip_address) => {
+  if (!ip_address || isPrivateIP(ip_address)) {
+    return { country_code: null, city: null };
+  }
+
+  // 1. Check cache first
+  const cached = await Analytics.getGeoCache(ip_address);
+  if (cached) {
+    return { country_code: cached.country_code, city: cached.city };
+  }
+
+  // 2. Try geoip-lite (offline, instant)
+  let geo = null;
+  if (geoipLite) {
+    geo = lookupViaGeoipLite(ip_address);
+  }
+
+  // 3. Fall back to ip-api.com HTTP
+  if (!geo) {
+    geo = await lookupViaHTTP(ip_address);
+  }
+
+  // 4. Write to cache (even if null, write a placeholder so we don't hammer the API)
+  const toCache = geo || {
+    country_code: null, country_name: null, city: null,
+    latitude: null, longitude: null, timezone: null, isp: null, organization: null,
   };
+
+  const saved = await Analytics.upsertGeoCache({ ip_address, ...toCache });
+  if (!saved) {
+    console.error("[GeoIP] Failed to write to geoip_cache for IP:", ip_address);
+  }
+
+  return { country_code: toCache.country_code, city: toCache.city };
+};
+
+// ─── UA Parser ────────────────────────────────────────────────────────────────
+
+const getDateRange = (range) => {
+  const days = range === "7d" ? 7 : range === "90d" ? 90 : 30;
+  // Use DATE_SUB on the DB side so timezone always matches where data was written
+  return { days };
 };
 
 const parseUA = (uaString) => {
@@ -30,74 +127,22 @@ const parseUA = (uaString) => {
     result.device.type === "tablet" ? "tablet" :
     raw.includes("bot") || raw.includes("crawler") || raw.includes("spider") ? "bot" :
     "desktop";
-  return { browser: result.browser.name || null, os: result.os.name || null, device_type };
-};
-
-const isPrivateIP = (ip) => {
-  if (!ip) return true;
-  const clean = ip.replace("::ffff:", "");
-  return (
-    clean === "127.0.0.1" || clean === "::1" || clean === "localhost" ||
-    clean.startsWith("10.") ||
-    clean.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(clean)
-  );
-};
-
-// Free GeoIP — ip-api.com, no key, 45 req/min on HTTP
-const lookupGeoIP = (ip) => {
-  return new Promise((resolve) => {
-    const req = http.get(
-      `http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,lat,lon,timezone,isp,org`,
-      { timeout: 3000 },
-      (res) => {
-        let body = "";
-        res.on("data", (c) => (body += c));
-        res.on("end", () => {
-          try {
-            const d = JSON.parse(body);
-            if (d.status === "success") {
-              resolve({
-                country_code: d.countryCode || null,
-                country_name: d.country || null,
-                city: d.city || null,
-                latitude: d.lat || null,
-                longitude: d.lon || null,
-                timezone: d.timezone || null,
-                isp: d.isp || null,
-                organization: d.org || null,
-              });
-            } else {
-              resolve(null);
-            }
-          } catch { resolve(null); }
-        });
-      }
-    );
-    req.on("error", () => resolve(null));
-    req.on("timeout", () => { req.destroy(); resolve(null); });
-  });
-};
-
-const resolveGeo = async (ip_address) => {
-  if (!ip_address || isPrivateIP(ip_address)) {
-    return { country_code: null, city: null };
-  }
-  const cached = await Analytics.getGeoCache(ip_address);
-  if (cached) return { country_code: cached.country_code, city: cached.city };
-
-  const geo = await lookupGeoIP(ip_address);
-  if (geo) {
-    Analytics.upsertGeoCache({ ip_address, ...geo }).catch(() => {});
-    return { country_code: geo.country_code, city: geo.city };
-  }
-  return { country_code: null, city: null };
+  return {
+    browser:     result.browser.name || null,
+    os:          result.os.name      || null,
+    device_type,
+  };
 };
 
 const checkAccess = async (userId, website_id) => {
   const websites = await Website.findForUser(userId);
   return websites?.find((w) => String(w.id) === String(website_id)) || null;
 };
+
+const getClientIP = (req) =>
+  (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+  req.socket?.remoteAddress ||
+  null;
 
 // ─── PUBLIC TRACKING ─────────────────────────────────────────────────────────
 
@@ -108,10 +153,7 @@ const trackPageView = asyncHandler(async (req, res) => {
     throw new Error("website_id, visitor_id and page_url are required");
   }
 
-  const ip_address =
-    (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
-    req.socket?.remoteAddress || null;
-
+  const ip_address = getClientIP(req);
   const user_agent = req.headers["user-agent"] || "";
   const { browser, os, device_type } = parseUA(user_agent);
   const { country_code, city } = await resolveGeo(ip_address);
@@ -149,10 +191,11 @@ const trackEvent = asyncHandler(async (req, res) => {
   }
 
   const eventId = await Analytics.trackEvent({
-    website_id, visitor_id, session_id: session_id ?? null, event_name,
-    event_category: event_category ?? null, event_label: event_label ?? null,
-    event_value: event_value ?? null, page_url: page_url ?? null,
-    element_selector: element_selector ?? null, event_data: event_data ?? null,
+    website_id, visitor_id, session_id: session_id ?? null,
+    event_name, event_category: event_category ?? null,
+    event_label: event_label ?? null, event_value: event_value ?? null,
+    page_url: page_url ?? null, element_selector: element_selector ?? null,
+    event_data: event_data ?? null,
   });
 
   res.status(201);
@@ -241,7 +284,7 @@ const getOverview = asyncHandler(async (req, res) => {
     throw new Error("Access denied");
   }
 
-  const { from, to } = getDateRange(range);
+  const { days } = getDateRange(range);
 
   const [
     summary, prevSummary,
@@ -255,26 +298,26 @@ const getOverview = asyncHandler(async (req, res) => {
     formStats,
     dailyStats,
   ] = await Promise.all([
-    Analytics.getSummaryTotals(website_id, from, to),
-    Analytics.getSummaryTotalsPrevPeriod(website_id, from, to),
-    Analytics.getPageViewTimeSeries(website_id, from, to),
-    Analytics.getTopPages(website_id, from, to),
-    Analytics.getTopReferrers(website_id, from, to),
-    Analytics.getDeviceBreakdown(website_id, from, to),
-    Analytics.getBrowserBreakdown(website_id, from, to),
-    Analytics.getOsBreakdown(website_id, from, to),
-    Analytics.getCountryBreakdown(website_id, from, to),
-    Analytics.getGeoStats(website_id, from, to),
-    Analytics.getVisitorSessionStats(website_id, from, to),
-    Analytics.getTopEntryPages(website_id, from, to),
-    Analytics.getTopExitPages(website_id, from, to),
-    Analytics.getNewVsReturning(website_id, from, to),
-    Analytics.getTopEvents(website_id, from, to),
-    Analytics.getEventTimeSeries(website_id, from, to),
-    Analytics.getAvgPerformance(website_id, from, to),
-    Analytics.getPerformanceByPage(website_id, from, to),
-    Analytics.getFormStats(website_id, from, to),
-    Analytics.getDailyStats(website_id, from, to),
+    Analytics.getSummaryTotals(website_id, days),
+    Analytics.getSummaryTotalsPrevPeriod(website_id, days),
+    Analytics.getPageViewTimeSeries(website_id, days),
+    Analytics.getTopPages(website_id, days),
+    Analytics.getTopReferrers(website_id, days),
+    Analytics.getDeviceBreakdown(website_id, days),
+    Analytics.getBrowserBreakdown(website_id, days),
+    Analytics.getOsBreakdown(website_id, days),
+    Analytics.getCountryBreakdown(website_id, days),
+    Analytics.getGeoStats(website_id, days),
+    Analytics.getVisitorSessionStats(website_id, days),
+    Analytics.getTopEntryPages(website_id, days),
+    Analytics.getTopExitPages(website_id, days),
+    Analytics.getNewVsReturning(website_id, days),
+    Analytics.getTopEvents(website_id, days),
+    Analytics.getEventTimeSeries(website_id, days),
+    Analytics.getAvgPerformance(website_id, days),
+    Analytics.getPerformanceByPage(website_id, days),
+    Analytics.getFormStats(website_id, days),
+    Analytics.getDailyStats(website_id, days),
   ]);
 
   res.status(200);

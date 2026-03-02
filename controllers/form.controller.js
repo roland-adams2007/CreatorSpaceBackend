@@ -38,7 +38,6 @@ const sendForm = asyncHandler(async function (req, res) {
 const fetchForms = asyncHandler(async function (req, res) {
   const websiteId = req.query.website_id;
   const userId = req.user?.id;
-  u;
   if (!websiteId) {
     res.status(400);
     throw new Error("Website ID is required");

@@ -50,7 +50,7 @@ const Form = {
           form_data,
           created_at
         ) VALUES (?, ?, ?)`,
-        [website_id, JSON.stringify(form_data), created_at || new Date()],
+        [website_id, form_data, created_at || new Date()],
       );
       return result.insertId;
     } catch (error) {
