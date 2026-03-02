@@ -379,10 +379,60 @@ const currentUser = asyncHandler(async function (req, res) {
   responseHandler(res, req.user, "Current user");
 });
 
+const updateProfile = asyncHandler(async function (req, res) {
+  const userId = req.user?.id;
+  const { fname, lname, email, newPassword, currentPassword } = req.body;
+
+  if (!fname) {
+    res.status(400);
+    throw new Error("Firstname is required");
+  }
+  if (!lname) {
+    res.status(400);
+    throw new Error("Lastname is required");
+  }
+  if (!email) {
+    res.status(400);
+    throw new Error("Email is required");
+  }
+
+  const existingEmail = await User.findByEmail(email);
+  if (existingEmail && existingEmail.id !== userId) {
+    res.status(400);
+    throw new Error("Email already exists");
+  }
+
+  const updateData = { fname, lname, email };
+  if (newPassword && currentPassword) {
+    const isPasswordValid = await bcrypt.compare(
+      existingEmail.password,
+      currentPassword,
+    );
+    if (!isPasswordValid) {
+      res.status(400);
+      throw new Error("Current password is incorrect");
+    }
+
+    updateData.password = await bcrypt.hash(newPassword, 10);
+  }
+
+  const updated = await User.update(userId, updateData);
+
+  if (!updated) {
+    res.status(500);
+    throw new Error("Failed to update profile");
+  }
+
+  const updatedUser = await User.findById(userId);
+  res.status(200);
+  responseHandler(res, { user: updatedUser }, "Profile updated successfully");
+});
+
 module.exports = {
   loginUser,
   regUser,
   currentUser,
   verifyUser,
   userCompanyCheck,
+  updateProfile,
 };

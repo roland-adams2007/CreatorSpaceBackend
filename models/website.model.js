@@ -117,6 +117,21 @@ const Website = {
       return false;
     }
   },
+  updateById: async (id, data) => {
+    try {
+      const { name, slug, is_published, updated_at } = data;
+      const [result] = await db_connection.execute(
+        `UPDATE websites 
+         SET name = ?, slug = ?, is_published = ?, updated_at = ?
+         WHERE id = ?`,
+        [name, slug, is_published, updated_at, id],
+      );
+      return result.affectedRows > 0;
+    } catch (error) {
+      console.log(error);
+      return false;
+    }
+  },
 };
 
 module.exports = Website;

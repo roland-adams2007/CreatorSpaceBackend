@@ -102,8 +102,52 @@ const getWebsite = asyncHandler(async function (req, res) {
   responseHandler(res, { website }, "Website retrieved");
 });
 
+const updateWebsite = asyncHandler(async function (req, res) {
+  const userId = req.user?.id;
+  const { websiteId } = req.params;
+  const { name, slug, is_published } = req.body;
+
+  if (!websiteId) {
+    res.status(400);
+    throw new Error("Website ID is required");
+  }
+  if (!name || name.trim().length < 2) {
+    res.status(400);
+    throw new Error("Website name is required");
+  }
+  if (!slug || slug.trim().length < 2) {
+    res.status(400);
+    throw new Error("Slug  is required");
+  }
+
+  const website = await Website.findById(websiteId, userId);
+
+  if (!website) {
+    res.status(404);
+    throw new Error("Website not found or access denied");
+  }
+
+  const updated = await Website.updateById(websiteId, {
+    name,
+    slug,
+    is_published: is_published ? 1 : 0,
+    updated_at: new Date().toISOString().slice(0, 19).replace("T", " "),
+  });
+
+  if (!updated) {
+    res.status(500);
+    throw new Error("Failed to update website");
+  }
+
+  const updatedWebsite = await Website.findById(websiteId, userId);
+
+  res.status(200);
+  responseHandler(res, updatedWebsite, "Website updated successfully");
+});
+
 module.exports = {
   createWebsite,
   getWebsites,
   getWebsite,
+  updateWebsite,
 };

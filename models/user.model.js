@@ -6,7 +6,7 @@ const User = {
     const [rows] = await db_connection.execute(
       `SELECT id, uuid, fname, lname, email, password_hash, is_active, email_verified_at
        FROM users WHERE email = ? LIMIT 1`,
-      [email]
+      [email],
     );
     return rows[0] || null;
   },
@@ -16,7 +16,7 @@ const User = {
       const [rows] = await db_connection.execute(
         `SELECT id, uuid, fname, lname, email, is_active, email_verified_at, last_login_at, created_at
          FROM users WHERE id = ? LIMIT 1`,
-        [id]
+        [id],
       );
       return rows[0] || null;
     } catch {
@@ -24,12 +24,20 @@ const User = {
     }
   },
 
-  create: async ({ fname, lname, uuid, email, password_hash, is_active, created_at }) => {
+  create: async ({
+    fname,
+    lname,
+    uuid,
+    email,
+    password_hash,
+    is_active,
+    created_at,
+  }) => {
     try {
       const [result] = await db_connection.execute(
         `INSERT INTO users (fname, lname, uuid, email, password_hash, is_active, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [fname, lname, uuid, email, password_hash, is_active ?? 1, created_at]
+        [fname, lname, uuid, email, password_hash, is_active ?? 1, created_at],
       );
       return result.insertId;
     } catch {
@@ -37,12 +45,19 @@ const User = {
     }
   },
 
-  insertEmailToken: async ({ email, user_id, type, token_hash, expires_at, created_at }) => {
+  insertEmailToken: async ({
+    email,
+    user_id,
+    type,
+    token_hash,
+    expires_at,
+    created_at,
+  }) => {
     try {
       const [result] = await db_connection.execute(
         `INSERT INTO email_tokens (email, user_id, type, token_hash, expires_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [email, user_id ?? null, type, token_hash, expires_at, created_at]
+        [email, user_id ?? null, type, token_hash, expires_at, created_at],
       );
       return result.insertId;
     } catch {
@@ -54,7 +69,7 @@ const User = {
     try {
       await db_connection.execute(
         `DELETE FROM email_tokens WHERE user_id = ? AND type = ?`,
-        [user_id, type]
+        [user_id, type],
       );
       return true;
     } catch {
@@ -70,7 +85,7 @@ const User = {
          JOIN users u ON et.user_id = u.id
          WHERE et.token_hash = ? AND et.type = ? AND et.is_used = 0
          LIMIT 1`,
-        [token_hash, type]
+        [token_hash, type],
       );
       return rows[0] || null;
     } catch {
@@ -82,7 +97,7 @@ const User = {
     try {
       await db_connection.execute(
         `UPDATE email_tokens SET is_used = 1, used_at = ? WHERE token_hash = ?`,
-        [nowUtc, token_hash]
+        [nowUtc, token_hash],
       );
       return true;
     } catch {
@@ -111,7 +126,7 @@ const User = {
           device_label ?? null,
           created_at,
           last_seen_at ?? null,
-        ]
+        ],
       );
       return result.insertId;
     } catch {
@@ -119,12 +134,18 @@ const User = {
     }
   },
 
-  createRefreshToken: async ({ user_id, session_id, token_hash, expires_at, created_at }) => {
+  createRefreshToken: async ({
+    user_id,
+    session_id,
+    token_hash,
+    expires_at,
+    created_at,
+  }) => {
     try {
       const [result] = await db_connection.execute(
         `INSERT INTO refresh_tokens (user_id, session_id, token_hash, expires_at, created_at)
          VALUES (?, ?, ?, ?, ?)`,
-        [user_id, session_id, token_hash, expires_at, created_at]
+        [user_id, session_id, token_hash, expires_at, created_at],
       );
       return result.insertId;
     } catch {
@@ -136,11 +157,11 @@ const User = {
     try {
       await db_connection.execute(
         `UPDATE user_sessions SET revoked_at = ? WHERE session_id = ?`,
-        [nowUtc, session_id]
+        [nowUtc, session_id],
       );
       await db_connection.execute(
         `UPDATE refresh_tokens SET revoked_at = ? WHERE session_id = ? AND revoked_at IS NULL`,
-        [nowUtc, session_id]
+        [nowUtc, session_id],
       );
       return true;
     } catch {
@@ -152,7 +173,7 @@ const User = {
     try {
       await db_connection.execute(
         `UPDATE users SET last_login_at = ? WHERE id = ?`,
-        [nowUtc, user_id]
+        [nowUtc, user_id],
       );
       return true;
     } catch {
@@ -164,7 +185,7 @@ const User = {
     try {
       await db_connection.execute(
         `UPDATE users SET email_verified_at = ? WHERE id = ?`,
-        [nowUtc, user_id]
+        [nowUtc, user_id],
       );
       return true;
     } catch {
@@ -176,7 +197,7 @@ const User = {
     try {
       await db_connection.execute(
         `INSERT INTO login_attempts (email, ip_address, success, created_at) VALUES (?, ?, ?, ?)`,
-        [email ?? null, ip_address ?? null, success ? 1 : 0, created_at]
+        [email ?? null, ip_address ?? null, success ? 1 : 0, created_at],
       );
       return true;
     } catch {
@@ -189,7 +210,7 @@ const User = {
       `SELECT COUNT(*) AS failed_attempts
        FROM login_attempts
        WHERE email = ? AND ip_address = ? AND success = 0 AND created_at >= (NOW() - INTERVAL 15 MINUTE)`,
-      [email, ip_address]
+      [email, ip_address],
     );
     return rows[0] || { failed_attempts: 0 };
   },
@@ -198,8 +219,44 @@ const User = {
     await db_connection.execute(
       `DELETE FROM login_attempts
        WHERE email = ? AND ip_address = ? AND success = 0`,
-      [email, ip_address]
+      [email, ip_address],
     );
+  },
+  update: async (user_id, { fname, lname, email, password }) => {
+    try {
+      const fields = [];
+      const values = [];
+
+      if (fname) {
+        fields.push("fname = ?");
+        values.push(fname);
+      }
+      if (lname) {
+        fields.push("lname = ?");
+        values.push(lname);
+      }
+      if (email) {
+        fields.push("email = ?");
+        values.push(email);
+      }
+
+      if (password) {
+        fields.push("password = ?");
+        values.push(password);
+      }
+
+      if (fields.length === 0) {
+        return false;
+      }
+
+      values.push(user_id);
+
+      const query = `UPDATE users SET ${fields.join(", ")} WHERE id = ?`;
+      const [result] = await db_connection.execute(query, values);
+      return result.affectedRows > 0;
+    } catch {
+      return false;
+    }
   },
 };
 
